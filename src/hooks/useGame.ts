@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generatePuzzle } from '../game/generator';
-import { autoFillForced, findForcedMove } from "../game/solver";
+import { autoFillForced, findHintMove } from "../game/solver";
 import { emptyGrid, Grid, nextValue, Puzzle } from '../game/types';
 import { getViolations, isSolved } from "../game/validate";
 
@@ -158,7 +158,7 @@ export function useGame(): GameState {
 
     const showHint = useCallback(() => {
         if (puzzle === null || solved) return;
-        const move = findForcedMove(board, puzzle);
+        const move = findHintMove(board, puzzle);
         setHintCell(move?.idx ?? null);
     }, [board, puzzle, solved]);
 
