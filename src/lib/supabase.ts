@@ -4,7 +4,9 @@ export interface LeaderboardPlayer {
   userId: string;
   name: string;
   picture?: string;
-  times: number[];
+  hardTimes: number[];
+  minimalTimes: number[];
+  latestTime: number;
   avg: number;
   best: number;
   solveCount: number;

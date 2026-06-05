@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -238,12 +238,17 @@ export default function GameScreen() {
   const [boardContainerW, setBoardContainerW] = useState(0);
   const [boardContainerH, setBoardContainerH] = useState(0);
 
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+
   useEffect(() => {
-    if (!game.solved || !user) return;
-    postSolveTime(user.sub, game.seconds, game.difficulty, user.name, user.picture)
+    if (!game.solved) return;
+    const u = userRef.current;
+    if (!u) return;
+    postSolveTime(u.sub, game.seconds, game.difficulty, u.name, u.picture)
       .then(() => setHistoryRefreshKey((k) => k + 1))
       .catch(() => {});
-  }, [game.solved, user, game.difficulty]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [game.solved, game.difficulty]); // intentionally excludes user — post when puzzle is solved, not when user changes
 
   const handleTabChange = (tab: Tab) => {
     if (tab === "history") setHistoryMounted(true);

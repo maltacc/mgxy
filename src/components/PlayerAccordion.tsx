@@ -32,7 +32,7 @@ export function PlayerAccordion({ player, colorIndex }: Props) {
           <Text style={styles.name} numberOfLines={1}>{player.name}</Text>
         </View>
         <View style={styles.right}>
-          <Text style={styles.latestTime}>{formatTime(player.times[0])}</Text>
+          <Text style={styles.latestTime}>{formatTime(player.latestTime)}</Text>
           <Text style={[styles.chevron, open && styles.chevronOpen]}>›</Text>
         </View>
       </Pressable>
@@ -43,7 +43,20 @@ export function PlayerAccordion({ player, colorIndex }: Props) {
             <Text style={styles.metaText}>Best {formatTime(player.best)}</Text>
             <Text style={styles.metaText}>{player.solveCount} solve{player.solveCount === 1 ? '' : 's'}</Text>
           </View>
-          <TimesGraph times={player.times} height={110} accent={accent} />
+
+          {player.hardTimes.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.diffLabel}>Hard</Text>
+              <TimesGraph times={player.hardTimes} height={100} accent={accent} />
+            </View>
+          )}
+
+          {player.minimalTimes.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.diffLabel}>Minimal</Text>
+              <TimesGraph times={player.minimalTimes} height={100} accent={accent} />
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -125,7 +138,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 14,
-    gap: 8,
+    gap: 12,
   },
   meta: {
     flexDirection: 'row',
@@ -135,5 +148,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.subtle,
     fontVariant: ['tabular-nums'],
+  },
+  section: {
+    gap: 4,
+  },
+  diffLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.subtle,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });
