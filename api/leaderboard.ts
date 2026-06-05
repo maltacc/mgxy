@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SECRET_KEY!,
+  { auth: { persistSession: false, autoRefreshToken: false } },
 );
 
 const MAX = 30;
@@ -18,10 +19,11 @@ export interface LeaderboardPlayer {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    res.status(405).end();
-    return;
-  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+  if (req.method !== 'GET') { res.status(405).end(); return; }
 
   const excludeUserId = typeof req.query.excludeUserId === 'string' ? req.query.excludeUserId : null;
 
