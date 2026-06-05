@@ -1,6 +1,5 @@
-const MAX = 30;
-const TIMES_API = '/api/times';
-const LEADERBOARD_API = '/api/leaderboard';
+import { createClient } from "@supabase/supabase-js";
+import type { Difficulty } from "../hooks/useGame";
 
 export interface LeaderboardPlayer {
   userId: string;
@@ -11,111 +10,107 @@ export interface LeaderboardPlayer {
   solveCount: number;
 }
 
-async function apiGet(userId: string): Promise<number[]> {
-  const res = await fetch(`${TIMES_API}?userId=${encodeURIComponent(userId)}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `GET ${TIMES_API} failed (${res.status})`);
-  }
-  const { times } = (await res.json()) as { times: number[] };
-  return times;
-}
+export const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
+);
 
-async function apiPost(userId: string, seconds: number, name?: string): Promise<number[]> {
-  const res = await fetch(TIMES_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, time: seconds, name }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `POST ${TIMES_API} failed (${res.status})`);
-  }
-  const { times } = (await res.json()) as { times: number[] };
-  return times;
-}
+const MAX = 30;
 
-async function apiLeaderboard(excludeUserId?: string): Promise<LeaderboardPlayer[]> {
-  const qs = excludeUserId ? `?excludeUserId=${encodeURIComponent(excludeUserId)}` : '';
-  const res = await fetch(`${LEADERBOARD_API}${qs}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `GET ${LEADERBOARD_API} failed (${res.status})`);
-  }
-  const { players } = (await res.json()) as { players: LeaderboardPlayer[] };
-  return players;
-}
+export async function fetchLeaderboard(
+  excludeUserId?: string,
+): Promise<LeaderboardPlayer[]> {
+  const { data, error } = await supabase.from("puzzle_times").select(`
+      user_id,
+      seconds,
+      user_profiles (name)
+    `);
 
-function localGet(userId: string): number[] {
-  if (typeof localStorage === 'undefined') return [];
-  const raw = localStorage.getItem('tango_games') || '[]';
-  const arr = JSON.parse(raw) as Array<{ userId?: string; seconds: number }>;
-  return arr
-    .filter(r => !r.userId || r.userId === userId)
-    .map(r => r.seconds)
-    .slice(-MAX)
-    .reverse();
-}
+  if (error || !data) return [];
 
-function localPost(userId: string, seconds: number, name?: string): number[] {
-  if (typeof localStorage === 'undefined') return [];
-  const key = 'tango_games';
-  const raw = localStorage.getItem(key) || '[]';
-  const arr = JSON.parse(raw) as Array<{ userId: string; seconds: number; completedAt: number; name?: string }>;
-  arr.push({ userId, seconds, completedAt: Date.now(), name });
-  localStorage.setItem(key, JSON.stringify(arr));
-  return arr.map(r => r.seconds).slice(-MAX).reverse();
-}
+  // Map to group data by user
+  const byUser = new Map<string, { name: string; times: number[] }>();
 
-function localLeaderboard(excludeUserId?: string): LeaderboardPlayer[] {
-  if (typeof localStorage === 'undefined') return [];
-  const raw = localStorage.getItem('tango_games') || '[]';
-  const arr = JSON.parse(raw) as Array<{ userId: string; seconds: number; name?: string }>;
-  const byUser = new Map<string, { name?: string; times: number[] }>();
+  for (const row of data) {
+    const userId = row.user_id as string;
+    if (excludeUserId && userId === excludeUserId) continue;
 
-  for (const row of arr) {
-    if (excludeUserId && row.userId === excludeUserId) continue;
-    const entry = byUser.get(row.userId) ?? { name: row.name, times: [] };
-    if (entry.times.length < MAX) entry.times.unshift(row.seconds);
-    if (row.name) entry.name = row.name;
-    byUser.set(row.userId, entry);
+    const entry = byUser.get(userId) ?? {
+      name: (row.user_profiles as any)?.name ?? `Player ${userId.slice(0, 6)}`,
+      times: [] as number[],
+    };
+
+    entry.times.push(row.seconds as number);
+    byUser.set(userId, entry);
   }
 
   return [...byUser.entries()]
     .map(([userId, { name, times }]) => {
-      const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+      // Get the most recent MAX solves
+      const sortedTimes = [...times].sort((a, b) => b - a).slice(0, MAX);
+      const avg = Math.round(
+        sortedTimes.reduce((a, b) => a + b, 0) / sortedTimes.length,
+      );
+
       return {
         userId,
-        name: name ?? `Player ${userId.slice(0, 6)}`,
-        times,
+        name,
+        times: sortedTimes,
         avg,
-        best: Math.min(...times),
+        best: Math.min(...sortedTimes),
         solveCount: times.length,
       };
     })
     .sort((a, b) => a.avg - b.avg);
 }
 
-export async function postSolveTime(userId: string, seconds: number, name?: string): Promise<number[]> {
-  try {
-    return await apiPost(userId, seconds, name);
-  } catch {
-    return localPost(userId, seconds, name);
+export async function postSolveTime(
+  userId: string,
+  seconds: number,
+  difficulty: Difficulty,
+  name?: string,
+): Promise<number[]> {
+  // 1. Ensure the profile exists first.
+  // We use upsert so that if the user already has a profile, it just updates (or does nothing).
+  // This satisfies the Foreign Key requirement.
+  const { error: profileError } = await supabase
+    .from("user_profiles")
+    .upsert({ user_id: userId, name: name ?? "Anonymous" });
+
+  if (profileError) {
+    console.error("Profile Upsert Error:", profileError);
+    // You might want to handle this, but keep going to attempt the time insert
   }
+
+  // 2. Now insert the puzzle time
+  const { error: timeError } = await supabase
+    .from("puzzle_times")
+    .insert([{ user_id: userId, seconds, difficulty }]);
+
+  if (timeError) {
+    console.error("Time Insert Error:", timeError);
+    throw timeError;
+  }
+
+  return fetchTimes(userId, difficulty);
 }
 
-export async function fetchTimes(userId: string): Promise<number[]> {
-  try {
-    return await apiGet(userId);
-  } catch {
-    return localGet(userId);
-  }
-}
+export async function fetchTimes(
+  userId: string,
+  difficulty: Difficulty,
+): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("puzzle_times")
+    .select("seconds")
+    .eq("user_id", userId)
+    .eq("difficulty", difficulty)
+    .order("solved_at", { ascending: false })
+    .limit(MAX);
 
-export async function fetchLeaderboard(excludeUserId?: string): Promise<LeaderboardPlayer[]> {
-  try {
-    return await apiLeaderboard(excludeUserId);
-  } catch {
-    return localLeaderboard(excludeUserId);
+  if (error) {
+    console.error("Fetch error:", error);
+    return [];
   }
+
+  return (data ?? []).map((r) => r.seconds as number);
 }

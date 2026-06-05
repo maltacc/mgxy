@@ -1,5 +1,4 @@
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { Grid, Puzzle, SIZE } from "../game/types";
 import { Cell } from "./Cell";
 import { colors } from "../theme";
@@ -11,33 +10,23 @@ interface Props {
     hintCell: number | null;
     solved: boolean;
     onCell: (idx: number) => void;
+    containerWidth: number;
+    containerHeight: number;
 }
 
 const GAP = 2;
-const FRAME_PAD = 10; // Board frame padding (each side)
+const FRAME_PAD = 10;
 
-export function Board({ board, puzzle, violations, hintCell, solved, onCell }: Props) {
-    const { width: winWidth } = useWindowDimensions();
-    const [containerW, setContainerW] = useState(winWidth);
-    const [containerH, setContainerH] = useState(9999);
-
-    // Fit within both the measured container width and height (minus frame padding)
+export function Board({ board, puzzle, violations, hintCell, solved, onCell, containerWidth, containerHeight }: Props) {
     const boardMax = Math.max(120, Math.min(
-        containerW - FRAME_PAD * 2,
-        containerH - FRAME_PAD * 2,
+        containerWidth - FRAME_PAD * 2,
+        containerHeight - FRAME_PAD * 2,
         460,
     ));
     const cell = Math.max(16, Math.floor((boardMax - GAP * (SIZE + 1)) / SIZE));
     const total = cell * SIZE + GAP * (SIZE + 1);
 
     return (
-        <View
-            style={styles.wrapper}
-            onLayout={e => {
-                setContainerW(e.nativeEvent.layout.width);
-                setContainerH(e.nativeEvent.layout.height);
-            }}
-        >
         <View style={styles.frame}>
             <View style={[styles.grid, { width: total, height: total }]}>
                 {Array.from({ length: SIZE * SIZE }, (_, idx) => {
@@ -67,9 +56,9 @@ export function Board({ board, puzzle, violations, hintCell, solved, onCell }: P
                 })}
 
                 {puzzle.constraints.map((edge, i) => {
-                    const horizontal = edge.b == edge.a + 1; 
+                    const horizontal = edge.b === edge.a + 1;
                     const ar = Math.floor(edge.a / SIZE);
-                    const ac = edge.a % SIZE; 
+                    const ac = edge.a % SIZE;
 
                     const x = horizontal
                         ? GAP + ac * (cell + GAP) + cell + GAP / 2
@@ -77,37 +66,31 @@ export function Board({ board, puzzle, violations, hintCell, solved, onCell }: P
                     const y = horizontal
                         ? GAP + ar * (cell + GAP) + cell / 2
                         : GAP + ar * (cell + GAP) + cell + GAP / 2;
-                    
-                    const s = Math.max(15, cell * 0.32); 
+
+                    const s = Math.max(15, cell * 0.32);
                     return (
                         <View
                             key={i}
                             pointerEvents="none"
                             style={[
                                 styles.badge,
-                                { width: s, height: s, borderRadius: s / 2, left: x - s / 2, top: y - s / 2},
-                            ]}>
-                                <Text selectable={false} style={[styles.badgeText, { fontSize: s * 0.66 }]}>
-                                    {edge.relation == '=' ? '=' : 'x'}
-                                </Text>
+                                { width: s, height: s, borderRadius: s / 2, left: x - s / 2, top: y - s / 2 },
+                            ]}
+                        >
+                            <Text selectable={false} style={[styles.badgeText, { fontSize: s * 0.66 }]}>
+                                {edge.relation === '=' ? '=' : 'x'}
+                            </Text>
                         </View>
                     );
                 })}
             </View>
         </View>
-        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    wrapper: {
-        flex: 1,
-        alignSelf: 'stretch',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     frame: {
-        padding: 10,
+        padding: FRAME_PAD,
         borderRadius: 18,
         backgroundColor: colors.board,
         borderWidth: 1,

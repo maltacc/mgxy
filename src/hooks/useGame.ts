@@ -1,19 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generatePuzzle } from '../game/generator';
 import { autoFillForced } from "../game/solver";
-import { Grid, nextValue, Puzzle } from '../game/types';
+import { emptyGrid, Grid, nextValue, Puzzle } from '../game/types';
 import { getViolations, isSolved } from "../game/validate";
 
+export type Difficulty = 'hard' | 'minimal';
+
+type DiffState = { board: Grid; seconds: number };
+
 export interface GameState {
-    puzzle: Puzzle;
+    puzzle: Puzzle | null;
     board: Grid;
     solved: boolean;
     violations: Set<number>;
     seconds: number;
     showErrors: boolean;
     paused: boolean;
+    loading: boolean;
     canUndo: boolean;
+    difficulty: Difficulty;
     setShowErrors: (value: boolean) => void;
+    setDifficulty: (d: Difficulty) => void;
     newGame: () => void;
     cycleCell: (idx: number) => void;
     undo: () => void;
@@ -23,131 +30,126 @@ export interface GameState {
 }
 
 const STORAGE_KEY = 'tango_game';
-const STORAGE_VERSION = 5; // bump when generator logic changes to discard stale saves
+const STORAGE_VERSION = 8; // Incremented for structure change
 
-function loadSaved(): { puzzle: Puzzle; board: Grid; seconds: number } | null {
+const emptyDiff = (): DiffState => ({ board: emptyGrid(), seconds: 0 });
+
+function loadSaved(): {
+    minimalPuzzle: Puzzle;
+    hardPuzzle: Puzzle;
+    perDiff: Record<Difficulty, DiffState>;
+    difficulty: Difficulty;
+} | null {
     if (typeof localStorage === 'undefined') return null;
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (parsed.v !== STORAGE_VERSION) return null;
-        const { puzzle, board, seconds } = parsed;
-        if (puzzle && board && typeof seconds === 'number') {
-          // Don't restore a solved game — would re-trigger the save effect on reload
-          if (isSolved(board as Grid, puzzle as Puzzle)) return null;
-          return { puzzle, board, seconds };
-        }
-    } catch {}
-    return null;
-}
-
-function getInitialState(): { puzzle: Puzzle; board: Grid; seconds: number } {
-    const saved = loadSaved();
-    if (saved) return saved;
-    const puzzle = generatePuzzle();
-    return { puzzle, board: puzzle.givens.slice() as Grid, seconds: 0 };
+        return parsed;
+    } catch { return null; }
 }
 
 export function useGame(): GameState {
-    const [{ puzzle: initPuzzle, board: initBoard, seconds: initSeconds }] = useState(getInitialState);
-    const [puzzle, setPuzzle] = useState<Puzzle>(initPuzzle);
-    const [board, setBoard] = useState<Grid>(initBoard);
+    const saved = useMemo(loadSaved, []);
+
+    const [minimalPuzzle, setMinimalPuzzle] = useState<Puzzle | null>(saved?.minimalPuzzle ?? null);
+    const [hardPuzzle, setHardPuzzle] = useState<Puzzle | null>(saved?.hardPuzzle ?? null);
+    const [difficulty, setDifficulty] = useState<Difficulty>(saved?.difficulty ?? 'hard');
+    const [perDiff, setPerDiff] = useState<Record<Difficulty, DiffState>>(
+        saved?.perDiff ?? { hard: emptyDiff(), minimal: emptyDiff() }
+    );
     const [history, setHistory] = useState<Grid[]>([]);
-    const [seconds, setSeconds] = useState(initSeconds);
     const [showErrors, setShowErrors] = useState(true);
     const [paused, setPaused] = useState(false);
+    const [loading, setLoading] = useState(saved === null);
 
-    const solved = useMemo(() => isSolved(board, puzzle), [board, puzzle]);
+    const puzzle = difficulty === 'minimal' ? minimalPuzzle : hardPuzzle;
+    const board = perDiff[difficulty].board;
+    const seconds = perDiff[difficulty].seconds;
 
-    const rawViolations = useMemo(
-        () => (showErrors ? getViolations(board, puzzle) : new Set<number>()),
-        [board, puzzle, showErrors]
-    );
+    useEffect(() => {
+        if (!loading) return;
+        const minimal = generatePuzzle('minimal');
+        const hard = generatePuzzle('hard');
+        setMinimalPuzzle(minimal);
+        setHardPuzzle(hard);
+        setPerDiff({
+            minimal: { board: minimal.givens.slice() as Grid, seconds: 0 },
+            hard: { board: hard.givens.slice() as Grid, seconds: 0 },
+        });
+        setLoading(false);
+    }, [loading]);
 
-    // Show errors only after 0.5s of inactivity; clear them immediately when fixed
+    const solved = useMemo(() => puzzle !== null && isSolved(board, puzzle), [board, puzzle]);
+    const rawViolations = useMemo(() => (showErrors && puzzle !== null ? getViolations(board, puzzle) : new Set<number>()), [board, puzzle, showErrors]);
     const [violations, setViolations] = useState<Set<number>>(new Set());
+
     useEffect(() => {
         if (rawViolations.size === 0) { setViolations(new Set()); return; }
         const id = setTimeout(() => setViolations(rawViolations), 500);
         return () => clearTimeout(id);
     }, [rawViolations]);
 
-    // Timer — stops when solved or paused
     useEffect(() => {
-        if (solved || paused) return;
-        const id = setInterval(() => setSeconds(s => s + 1), 1000);
+        if (solved || paused || loading) return;
+        const id = setInterval(() => {
+            setPerDiff(p => ({ ...p, [difficulty]: { ...p[difficulty], seconds: p[difficulty].seconds + 1 } }));
+        }, 1000);
         return () => clearInterval(id);
-    }, [solved, paused]);
+    }, [solved, paused, loading, difficulty]);
 
-    // Auto-pause when tab loses focus
     useEffect(() => {
-        if (typeof document === 'undefined') return;
-        const onVisibility = () => { if (document.hidden) setPaused(true); };
-        document.addEventListener('visibilitychange', onVisibility);
-        return () => document.removeEventListener('visibilitychange', onVisibility);
-    }, []);
-
-    // Persist puzzle + board + seconds to localStorage
-    useEffect(() => {
-        if (typeof localStorage === 'undefined') return;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: STORAGE_VERSION, puzzle, board, seconds }));
-    }, [puzzle, board, seconds]);
+        if (typeof localStorage === 'undefined' || minimalPuzzle === null || hardPuzzle === null) return;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: STORAGE_VERSION, minimalPuzzle, hardPuzzle, perDiff, difficulty }));
+    }, [minimalPuzzle, hardPuzzle, perDiff, difficulty]);
 
     const newGame = useCallback(() => {
-        const generated = generatePuzzle();
-        setPuzzle(generated);
-        setBoard(generated.givens.slice() as Grid);
+        setMinimalPuzzle(null);
+        setHardPuzzle(null);
+        setPerDiff({ hard: emptyDiff(), minimal: emptyDiff() });
         setHistory([]);
-        setSeconds(0);
         setPaused(false);
+        setLoading(true);
     }, []);
 
+    const lastCycleRef = useRef<{ idx: number; time: number } | null>(null);
     const cycleCell = useCallback((idx: number) => {
-        if (puzzle.givens[idx] !== 0 || solved) return;
-        setHistory(h => [...h, board]);
-        setBoard(prev => {
-            const next = prev.slice() as Grid;
+        if (puzzle === null || puzzle.givens[idx] !== 0 || solved) return;
+        const now = Date.now();
+        const prev = lastCycleRef.current;
+        const sameCell = prev !== null && prev.idx === idx && now - prev.time < 800;
+        lastCycleRef.current = { idx, time: now };
+        if (!sameCell) setHistory(h => [...h, board]);
+        setPerDiff(p => {
+            const next = p[difficulty].board.slice() as Grid;
             next[idx] = nextValue(next[idx]);
-            return next;
+            return { ...p, [difficulty]: { ...p[difficulty], board: next } };
         });
-    }, [board, puzzle, solved]);
+    }, [board, difficulty, puzzle, solved]);
 
     const undo = useCallback(() => {
         setHistory(h => {
             if (h.length === 0) return h;
-            setBoard(h[h.length - 1]);
+            const prev = h[h.length - 1];
+            setPerDiff(p => ({ ...p, [difficulty]: { ...p[difficulty], board: prev } }));
             return h.slice(0, -1);
         });
-    }, []);
+    }, [difficulty]);
 
     const clear = useCallback(() => {
+        if (puzzle === null) return;
         setHistory(h => [...h, board]);
-        setBoard(puzzle.givens.slice() as Grid);
-    }, [board, puzzle]);
+        setPerDiff(p => ({ ...p, [difficulty]: { ...p[difficulty], board: puzzle.givens.slice() as Grid } }));
+    }, [board, difficulty, puzzle]);
 
     const autoFill = useCallback(() => {
+        if (puzzle === null) return;
         setHistory(h => [...h, board]);
-        setBoard(autoFillForced(board, puzzle));
-    }, [board, puzzle]);
+        setPerDiff(p => ({ ...p, [difficulty]: { ...p[difficulty], board: autoFillForced(board, puzzle) } }));
+    }, [board, difficulty, puzzle]);
 
     const togglePause = useCallback(() => setPaused(p => !p), []);
 
-    return {
-        puzzle,
-        board,
-        solved,
-        violations,
-        seconds,
-        showErrors,
-        paused,
-        canUndo: history.length > 0,
-        setShowErrors,
-        newGame,
-        cycleCell,
-        undo,
-        clear,
-        autoFill,
-        togglePause,
-    };
+    return { puzzle, board, solved, violations, seconds, showErrors, paused, loading, canUndo: history.length > 0, difficulty, setShowErrors, setDifficulty, newGame, cycleCell, undo, clear, autoFill, togglePause };
 }

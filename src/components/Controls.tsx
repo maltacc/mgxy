@@ -125,9 +125,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   primary: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },

@@ -16,18 +16,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
   if (req.method === 'GET') {
-    const { userId } = req.query;
+    const { userId, difficulty } = req.query;
     if (!userId || typeof userId !== 'string') {
       res.status(400).json({ error: 'userId required' });
       return;
     }
-    const { data, error } = await supabase
+    let query = supabase
       .from('puzzle_times')
       .select('seconds')
       .eq('user_id', userId)
       .order('solved_at', { ascending: false })
       .limit(MAX);
 
+    if (difficulty && typeof difficulty === 'string') {
+      query = query.eq('difficulty', difficulty);
+    }
+
+    const { data, error } = await query;
     if (error) {
       console.error('GET puzzle_times error:', error);
       res.status(500).json({ error: error.message });
@@ -38,25 +43,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    const { userId, time, name } = req.body as { userId: string; time: number; name?: string };
+    const { userId, time, name, difficulty } = req.body as {
+      userId: string; time: number; name?: string; difficulty?: string;
+    };
     if (!userId || typeof time !== 'number' || time <= 0) {
       res.status(400).json({ error: 'invalid payload' });
       return;
     }
 
-    // Always ensure the user profile exists first
     const { error: profileError } = await supabase
       .from('user_profiles')
       .upsert({ user_id: userId, name: name || `Player ${userId.slice(0, 6)}` }, { onConflict: 'user_id' });
 
     if (profileError) {
       console.error('user_profiles upsert error:', profileError);
-      // Don't block on profile error — continue trying to insert the time
     }
 
     const { error: insertError } = await supabase
       .from('puzzle_times')
-      .insert({ user_id: userId, seconds: time });
+      .insert({ user_id: userId, seconds: time, difficulty: difficulty ?? 'hard' });
 
     if (insertError) {
       console.error('puzzle_times insert error:', insertError);
@@ -68,6 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('puzzle_times')
       .select('seconds')
       .eq('user_id', userId)
+      .eq('difficulty', difficulty ?? 'hard')
       .order('solved_at', { ascending: false })
       .limit(MAX);
 
