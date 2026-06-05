@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generatePuzzle } from '../game/generator';
-import { autoFillForced } from "../game/solver";
+import { autoFillForced, findForcedMove } from "../game/solver";
 import { emptyGrid, Grid, nextValue, Puzzle } from '../game/types';
 import { getViolations, isSolved } from "../game/validate";
 
@@ -19,6 +19,7 @@ export interface GameState {
     loading: boolean;
     canUndo: boolean;
     difficulty: Difficulty;
+    hintCell: number | null;
     setShowErrors: (value: boolean) => void;
     setDifficulty: (d: Difficulty) => void;
     newGame: () => void;
@@ -27,10 +28,11 @@ export interface GameState {
     clear: () => void;
     autoFill: () => void;
     togglePause: () => void;
+    showHint: () => void;
 }
 
 const STORAGE_KEY = 'tango_game';
-const STORAGE_VERSION = 8; // Incremented for structure change
+const STORAGE_VERSION = 9;
 
 const emptyDiff = (): DiffState => ({ board: emptyGrid(), seconds: 0 });
 
@@ -63,6 +65,7 @@ export function useGame(): GameState {
     const [showErrors, setShowErrors] = useState(true);
     const [paused, setPaused] = useState(false);
     const [loading, setLoading] = useState(saved === null);
+    const [hintCell, setHintCell] = useState<number | null>(null);
 
     const puzzle = difficulty === 'minimal' ? minimalPuzzle : hardPuzzle;
     const board = perDiff[difficulty].board;
@@ -110,12 +113,14 @@ export function useGame(): GameState {
         setPerDiff({ hard: emptyDiff(), minimal: emptyDiff() });
         setHistory([]);
         setPaused(false);
+        setHintCell(null);
         setLoading(true);
     }, []);
 
     const lastCycleRef = useRef<{ idx: number; time: number } | null>(null);
     const cycleCell = useCallback((idx: number) => {
         if (puzzle === null || puzzle.givens[idx] !== 0 || solved) return;
+        setHintCell(null);
         const now = Date.now();
         const prev = lastCycleRef.current;
         const sameCell = prev !== null && prev.idx === idx && now - prev.time < 800;
@@ -151,5 +156,11 @@ export function useGame(): GameState {
 
     const togglePause = useCallback(() => setPaused(p => !p), []);
 
-    return { puzzle, board, solved, violations, seconds, showErrors, paused, loading, canUndo: history.length > 0, difficulty, setShowErrors, setDifficulty, newGame, cycleCell, undo, clear, autoFill, togglePause };
+    const showHint = useCallback(() => {
+        if (puzzle === null || solved) return;
+        const move = findForcedMove(board, puzzle);
+        setHintCell(move?.idx ?? null);
+    }, [board, puzzle, solved]);
+
+    return { puzzle, board, solved, violations, seconds, showErrors, paused, loading, canUndo: history.length > 0, difficulty, hintCell, setShowErrors, setDifficulty, newGame, cycleCell, undo, clear, autoFill, togglePause, showHint };
 }

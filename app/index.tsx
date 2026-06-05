@@ -320,7 +320,7 @@ export default function GameScreen() {
                     board={game.board}
                     puzzle={game.puzzle!}
                     violations={game.violations}
-                    hintCell={null}
+                    hintCell={game.hintCell}
                     solved={game.solved}
                     onCell={game.cycleCell}
                     containerWidth={boardContainerW}
@@ -337,6 +337,7 @@ export default function GameScreen() {
                   onClear={game.clear}
                   onPause={game.togglePause}
                   onNew={handleNewGame}
+                  onHint={game.showHint}
                 />
               </View>
             </>

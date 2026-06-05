@@ -9,6 +9,7 @@ interface Props {
   onClear: () => void;
   onPause: () => void;
   onNew: () => void;
+  onHint: () => void;
 }
 
 function UndoIcon({ color }: { color: string }) {
@@ -61,7 +62,19 @@ function PlusIcon({ color }: { color: string }) {
   );
 }
 
-export function Controls({ canUndo, paused, onUndo, onClear, onPause, onNew }: Props) {
+function HintIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 2a7 7 0 0 1 4 12.8V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.2A7 7 0 0 1 12 2z"
+        stroke={color} strokeWidth={2} strokeLinejoin="round"
+      />
+      <Path d="M9 21h6" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function Controls({ canUndo, paused, onUndo, onClear, onPause, onNew, onHint }: Props) {
   return (
     <View style={styles.container}>
       <Pressable
@@ -90,6 +103,13 @@ export function Controls({ canUndo, paused, onUndo, onClear, onPause, onNew }: P
         {paused
           ? <PlayIcon color={colors.accent} />
           : <PauseIcon color={colors.buttonText} />}
+      </Pressable>
+
+      <Pressable
+        onPress={onHint}
+        style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+      >
+        <HintIcon color={colors.buttonText} />
       </Pressable>
 
       <Pressable

@@ -245,28 +245,39 @@ export function addExtraGivens(puzzle: Puzzle, count: number): Puzzle {
   return { ...puzzle, givens: newGivens };
 }
 
+function isSolvableByDeduction(givens: Grid, constraints: EdgeConstraint[]): boolean {
+  const board = givens.slice() as Grid;
+  const adj = buildAdjacency(constraints);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let idx = 0; idx < COUNT; idx++) {
+      if (board[idx] !== 0) continue;
+      const canSun = canPlace(board, adj, idx, 1);
+      const canMoon = canPlace(board, adj, idx, 2);
+      if (!canSun && !canMoon) return false; // contradiction
+      if (canSun && !canMoon) { board[idx] = 1; changed = true; }
+      else if (!canSun && canMoon) { board[idx] = 2; changed = true; }
+    }
+  }
+  return board.every(v => v !== 0);
+}
+
 export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
-  const CANDIDATES = 10; // Increased to find more optimized minimal boards
+  const CANDIDATES = 10;
   let bestGivens: Grid | null = null;
   let bestConstraints: EdgeConstraint[] = [];
   let bestSolution: Grid | null = null;
   let bestClueCount = Infinity;
 
-  // Difficulty target: 
-  // 'hard' (Easy) = more clues allowed
-  // 'minimal' (Hard) = force aggressive minimization
   const targetBudget = mode === 'minimal' ? 8 : 16;
 
   for (let i = 0; i < CANDIDATES; i++) {
     const solution = generateSolution();
     const givens = solution.slice() as Grid;
-    
-    // Use the canonical minimization logic
     const constraints = minimizePuzzle(givens, solution, [], true);
-    
     const clueCount = givens.filter((v) => v !== 0).length + constraints.length;
 
-    // We want the puzzle with the lowest clue count that is still valid
     if (clueCount < bestClueCount) {
       bestClueCount = clueCount;
       bestGivens = givens;
@@ -274,13 +285,27 @@ export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
       bestSolution = solution;
     }
 
-    // Early exit if we hit our difficulty target
     if (bestClueCount <= targetBudget) break;
   }
 
-  return {
-    givens: bestGivens!,
-    constraints: bestConstraints,
-    solution: bestSolution!,
-  };
+  // Ensure the minimized puzzle is fully solvable by constraint propagation alone.
+  let { givens, constraints, solution } = { givens: bestGivens!, constraints: bestConstraints, solution: bestSolution! };
+  while (!isSolvableByDeduction(givens, constraints)) {
+    const empty: number[] = [];
+    for (let i = 0; i < givens.length; i++) {
+      if (givens[i] === 0) empty.push(i);
+    }
+    const pick = empty[Math.floor(Math.random() * empty.length)];
+    givens = givens.slice() as Grid;
+    givens[pick] = solution[pick];
+  }
+
+  const minimal: Puzzle = { givens, constraints, solution };
+
+  // Hard mode: same relations, just 3 extra symbol cells revealed.
+  if (mode === 'hard') {
+    return addExtraGivens(minimal, 3);
+  }
+
+  return minimal;
 }
