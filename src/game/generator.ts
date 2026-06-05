@@ -229,18 +229,36 @@ function minimizePuzzle(
   return constraints;
 }
 
+// Returns cells whose relation partner is already given — adding these would
+// make both sides of a pair visible, which makes the relation redundant.
+function blockedByRelation(givens: Grid, constraints: EdgeConstraint[]): Set<number> {
+  const blocked = new Set<number>();
+  for (const { a, b } of constraints) {
+    if (givens[a] !== 0) blocked.add(b);
+    if (givens[b] !== 0) blocked.add(a);
+  }
+  return blocked;
+}
+
 export function addExtraGivens(puzzle: Puzzle, count: number): Puzzle {
   const newGivens = puzzle.givens.slice() as Grid;
-  const empty: number[] = [];
+  const blocked = blockedByRelation(newGivens, puzzle.constraints);
+  const eligible: number[] = [];
   for (let i = 0; i < newGivens.length; i++) {
-    if (newGivens[i] === 0) empty.push(i);
+    if (newGivens[i] === 0 && !blocked.has(i)) eligible.push(i);
   }
-  for (let i = empty.length - 1; i > 0; i--) {
+  for (let i = eligible.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [empty[i], empty[j]] = [empty[j], empty[i]];
+    [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
   }
-  for (let i = 0; i < Math.min(count, empty.length); i++) {
-    newGivens[empty[i]] = puzzle.solution[empty[i]];
+  for (let i = 0; i < Math.min(count, eligible.length); i++) {
+    const idx = eligible[i];
+    newGivens[idx] = puzzle.solution[idx];
+    // Block this cell's relation partners for subsequent picks
+    for (const { a, b } of puzzle.constraints) {
+      if (a === idx) blocked.add(b);
+      if (b === idx) blocked.add(a);
+    }
   }
   return { ...puzzle, givens: newGivens };
 }
@@ -298,6 +316,13 @@ export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
     const pick = empty[Math.floor(Math.random() * empty.length)];
     givens = givens.slice() as Grid;
     givens[pick] = solution[pick];
+  }
+
+  // Drop one given from any relation pair where both are filled —
+  // the remaining given + the relation makes the removed cell deducible.
+  givens = givens.slice() as Grid;
+  for (const { a, b } of constraints) {
+    if (givens[a] !== 0 && givens[b] !== 0) givens[b] = 0;
   }
 
   const minimal: Puzzle = { givens, constraints, solution };
