@@ -1,4 +1,5 @@
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import Head from 'expo-router/head';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../src/context/AuthContext';
@@ -9,6 +10,9 @@ export default function RootLayout() {
   return (
     <GoogleOAuthProvider clientId={CLIENT_ID}>
       <AuthProvider>
+        <Head>
+          <meta name="referrer" content="no-referrer" />
+        </Head>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <Stack screenOptions={{ headerShown: false }} />
         </GestureHandlerRootView>

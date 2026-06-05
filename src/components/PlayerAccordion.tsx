@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Difficulty } from '../hooks/useGame';
 import type { LeaderboardPlayer } from '../lib/supabase';
 import { colors, formatTime } from '../theme';
 import { TimesGraph } from './TimesGraph';
@@ -9,11 +10,19 @@ const PALETTE = ['#6c8bff', '#22a565', '#e05a6e', '#9b6bcc', '#2db5c4', '#e8913a
 interface Props {
   player: LeaderboardPlayer;
   colorIndex: number;
+  viewDiff: Difficulty;
 }
 
-export function PlayerAccordion({ player, colorIndex }: Props) {
+export function PlayerAccordion({ player, colorIndex, viewDiff }: Props) {
   const [open, setOpen] = useState(false);
+  const [pictureFailed, setPictureFailed] = useState(false);
   const accent = PALETTE[colorIndex % PALETTE.length];
+  const showPicture = !!player.picture && !pictureFailed;
+
+  const times = viewDiff === 'hard' ? player.hardTimes : player.minimalTimes;
+  const latestTime = times[0] ?? 0;
+  const best = times.length > 0 ? Math.min(...times) : 0;
+  const avg = times.length > 0 ? Math.round(times.reduce((s, t) => s + t, 0) / times.length) : 0;
 
   return (
     <View style={styles.card}>
@@ -22,8 +31,12 @@ export function PlayerAccordion({ player, colorIndex }: Props) {
         style={({ pressed }) => [styles.header, pressed && styles.pressed]}
       >
         <View style={styles.left}>
-          {player.picture ? (
-            <Image source={{ uri: player.picture }} style={styles.avatar} />
+          {showPicture ? (
+            <Image
+              source={{ uri: player.picture }}
+              style={styles.avatar}
+              onError={() => setPictureFailed(true)}
+            />
           ) : (
             <View style={[styles.avatarFallback, { backgroundColor: accent }]}>
               <Text style={styles.initial}>{player.name[0]?.toUpperCase() ?? '?'}</Text>
@@ -32,7 +45,7 @@ export function PlayerAccordion({ player, colorIndex }: Props) {
           <Text style={styles.name} numberOfLines={1}>{player.name}</Text>
         </View>
         <View style={styles.right}>
-          <Text style={styles.latestTime}>{formatTime(player.latestTime)}</Text>
+          <Text style={styles.latestTime}>{formatTime(latestTime)}</Text>
           <Text style={[styles.chevron, open && styles.chevronOpen]}>›</Text>
         </View>
       </Pressable>
@@ -40,22 +53,13 @@ export function PlayerAccordion({ player, colorIndex }: Props) {
       {open && (
         <View style={styles.body}>
           <View style={styles.meta}>
-            <Text style={styles.metaText}>Best {formatTime(player.best)}</Text>
-            <Text style={styles.metaText}>{player.solveCount} solve{player.solveCount === 1 ? '' : 's'}</Text>
+            <Text style={styles.metaText}>Best {formatTime(best)}</Text>
+            <Text style={styles.metaText}>Avg {formatTime(avg)}</Text>
+            <Text style={styles.metaText}>{times.length} solve{times.length === 1 ? '' : 's'}</Text>
           </View>
 
-          {player.hardTimes.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.diffLabel}>Hard</Text>
-              <TimesGraph times={player.hardTimes} height={100} accent={accent} />
-            </View>
-          )}
-
-          {player.minimalTimes.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.diffLabel}>Minimal</Text>
-              <TimesGraph times={player.minimalTimes} height={100} accent={accent} />
-            </View>
+          {times.length > 0 && (
+            <TimesGraph times={times} height={100} accent={accent} />
           )}
         </View>
       )}

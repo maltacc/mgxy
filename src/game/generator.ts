@@ -98,6 +98,33 @@ export function canPlace(
   return true;
 }
 
+// The 8 symmetries of a square grid (rotations + reflections).
+// Each maps (row, col) → (new_row, new_col).
+const SYMMETRIES: Array<(r: number, c: number) => [number, number]> = [
+  (r, c) => [r, c],                         // identity
+  (r, c) => [c, SIZE - 1 - r],              // rotate 90° CW
+  (r, c) => [SIZE - 1 - r, SIZE - 1 - c],  // rotate 180°
+  (r, c) => [SIZE - 1 - c, r],              // rotate 270° CW
+  (r, c) => [r, SIZE - 1 - c],              // flip horizontal
+  (r, c) => [SIZE - 1 - r, c],              // flip vertical
+  (r, c) => [c, r],                          // transpose
+  (r, c) => [SIZE - 1 - c, SIZE - 1 - r],  // anti-transpose
+];
+
+function applySymmetry(
+  grid: Grid,
+  sym: (r: number, c: number) => [number, number],
+): Grid {
+  const result = emptyGrid();
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const [nr, nc] = sym(r, c);
+      result[indexOf(nr, nc)] = grid[indexOf(r, c)];
+    }
+  }
+  return result as Grid;
+}
+
 function generateSolution(): Grid {
   const grid = emptyGrid();
   const adj: Adjacency = new Map();
@@ -115,7 +142,9 @@ function generateSolution(): Grid {
     return false;
   };
   recurse(0);
-  return grid;
+
+  const sym = SYMMETRIES[Math.floor(Math.random() * SYMMETRIES.length)];
+  return applySymmetry(grid, sym);
 }
 
 // Counts valid completions of a partial board, stopping at maxCount.

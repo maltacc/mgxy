@@ -103,12 +103,15 @@ function DiffGraph({ label, times }: { label: string; times: number[] }) {
   );
 }
 
+type ViewDiff = 'hard' | 'minimal';
+
 function HistoryContent({ refreshKey }: { refreshKey: number }) {
   const { user } = useAuth();
   const [hardTimes, setHardTimes] = useState<number[]>([]);
   const [minimalTimes, setMinimalTimes] = useState<number[]>([]);
   const [others, setOthers] = useState<LeaderboardPlayer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [viewDiff, setViewDiff] = useState<ViewDiff>('hard');
 
   useEffect(() => {
     if (!user) return;
@@ -157,36 +160,63 @@ function HistoryContent({ refreshKey }: { refreshKey: number }) {
     );
   }
 
+  const myTimes = viewDiff === 'hard' ? hardTimes : minimalTimes;
+
+  const filteredOthers = others
+    .filter(p => (viewDiff === 'hard' ? p.hardTimes.length > 0 : p.minimalTimes.length > 0))
+    .sort((a, b) => {
+      const aTimes = viewDiff === 'hard' ? a.hardTimes : a.minimalTimes;
+      const bTimes = viewDiff === 'hard' ? b.hardTimes : b.minimalTimes;
+      const aAvg = Math.round(aTimes.reduce((s, t) => s + t, 0) / aTimes.length);
+      const bAvg = Math.round(bTimes.reduce((s, t) => s + t, 0) / bTimes.length);
+      return aAvg - bAvg;
+    });
+
   return (
     <ScrollView
       style={histStyles.scrollView}
       contentContainerStyle={histStyles.scroll}
       showsVerticalScrollIndicator={false}
     >
+      <View style={histStyles.diffToggle}>
+        {(['hard', 'minimal'] as const).map((d) => (
+          <Pressable
+            key={d}
+            onPress={() => setViewDiff(d)}
+            style={[histStyles.diffToggleBtn, viewDiff === d && histStyles.diffToggleBtnActive]}
+          >
+            <Text style={[histStyles.diffToggleLabel, viewDiff === d && histStyles.diffToggleLabelActive]}>
+              {d === 'hard' ? 'Hard' : 'Minimal'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <Text style={histStyles.heading}>Your history</Text>
 
-      <DiffGraph label="Hard" times={hardTimes} />
-      <DiffGraph label="Minimal" times={minimalTimes} />
+      {myTimes.length > 0 ? (
+        <DiffGraph label={viewDiff === 'hard' ? 'Hard' : 'Minimal'} times={myTimes} />
+      ) : (
+        <Text style={[histStyles.emptySub, histStyles.noSolvesInline]}>
+          No {viewDiff} solves yet
+        </Text>
+      )}
 
       <View style={histStyles.othersSection}>
         <Text style={histStyles.sectionHeading}>Other players</Text>
-        {others.length === 0 ? (
+        {filteredOthers.length === 0 ? (
           <Text style={histStyles.emptySub}>No other players yet</Text>
         ) : (
-          <>
-            <Text style={histStyles.sectionSub}>
-              Average times over their last {30} solves
-            </Text>
-            <View style={histStyles.playerList}>
-              {others.map((player, i) => (
-                <PlayerAccordion
-                  key={player.userId}
-                  player={player}
-                  colorIndex={i}
-                />
-              ))}
-            </View>
-          </>
+          <View style={histStyles.playerList}>
+            {filteredOthers.map((player, i) => (
+              <PlayerAccordion
+                key={player.userId}
+                player={player}
+                colorIndex={i}
+                viewDiff={viewDiff}
+              />
+            ))}
+          </View>
         )}
       </View>
     </ScrollView>
@@ -241,14 +271,27 @@ export default function GameScreen() {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  // Track previous {difficulty, solved} so we only post on a genuine false→true
+  // transition. Initialised with the restored state so a page-refresh on an
+  // already-solved puzzle doesn't re-submit, and a difficulty switch to an
+  // already-solved puzzle doesn't submit either.
+  const prevSolveStateRef = useRef({ difficulty: game.difficulty, solved: game.solved });
+
   useEffect(() => {
+    const prev = prevSolveStateRef.current;
+    const diffChanged = prev.difficulty !== game.difficulty;
+    prevSolveStateRef.current = { difficulty: game.difficulty, solved: game.solved };
+
     if (!game.solved) return;
+    if (diffChanged) return; // switched to an already-solved difficulty
+    if (prev.solved) return; // was already solved (e.g. restored from localStorage)
+
     const u = userRef.current;
     if (!u) return;
     postSolveTime(u.sub, game.seconds, game.difficulty, u.name, u.picture)
       .then(() => setHistoryRefreshKey((k) => k + 1))
       .catch(() => {});
-  }, [game.solved, game.difficulty]); // intentionally excludes user — post when puzzle is solved, not when user changes
+  }, [game.solved, game.difficulty]);
 
   const handleTabChange = (tab: Tab) => {
     if (tab === "history") setHistoryMounted(true);
@@ -499,4 +542,20 @@ const histStyles = StyleSheet.create({
   sectionHeading: { fontSize: 18, fontWeight: "700", color: colors.text },
   sectionSub: { fontSize: 13, color: colors.subtle, marginBottom: 4 },
   playerList: { gap: 12 },
+  diffToggle: {
+    flexDirection: "row",
+    alignSelf: "center",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.gridLine,
+    backgroundColor: colors.surface,
+    overflow: "hidden",
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  diffToggleBtn: { paddingHorizontal: 20, paddingVertical: 6 },
+  diffToggleBtnActive: { backgroundColor: colors.accent },
+  diffToggleLabel: { fontSize: 13, color: colors.subtle, fontWeight: "500" },
+  diffToggleLabelActive: { color: "#fff", fontWeight: "700" },
+  noSolvesInline: { textAlign: "left", marginBottom: 24 },
 });
