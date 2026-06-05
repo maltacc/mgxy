@@ -229,39 +229,6 @@ function minimizePuzzle(
   return constraints;
 }
 
-// Returns cells whose relation partner is already given — adding these would
-// make both sides of a pair visible, which makes the relation redundant.
-function blockedByRelation(givens: Grid, constraints: EdgeConstraint[]): Set<number> {
-  const blocked = new Set<number>();
-  for (const { a, b } of constraints) {
-    if (givens[a] !== 0) blocked.add(b);
-    if (givens[b] !== 0) blocked.add(a);
-  }
-  return blocked;
-}
-
-export function addExtraGivens(puzzle: Puzzle, count: number): Puzzle {
-  const newGivens = puzzle.givens.slice() as Grid;
-  const blocked = blockedByRelation(newGivens, puzzle.constraints);
-  const eligible: number[] = [];
-  for (let i = 0; i < newGivens.length; i++) {
-    if (newGivens[i] === 0 && !blocked.has(i)) eligible.push(i);
-  }
-  for (let i = eligible.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
-  }
-  for (let i = 0; i < Math.min(count, eligible.length); i++) {
-    const idx = eligible[i];
-    newGivens[idx] = puzzle.solution[idx];
-    // Block this cell's relation partners for subsequent picks
-    for (const { a, b } of puzzle.constraints) {
-      if (a === idx) blocked.add(b);
-      if (b === idx) blocked.add(a);
-    }
-  }
-  return { ...puzzle, givens: newGivens };
-}
 
 function isSolvableByDeduction(givens: Grid, constraints: EdgeConstraint[]): boolean {
   const board = givens.slice() as Grid;
@@ -279,6 +246,51 @@ function isSolvableByDeduction(givens: Grid, constraints: EdgeConstraint[]): boo
     }
   }
   return board.every(v => v !== 0);
+}
+
+// BFS over stuck cells: find first valid hint that doesn't complete both sides of a
+// relation pair (which would make the constraint trivially readable).
+function findDeductionHint(
+  givens: Grid,
+  constraints: EdgeConstraint[],
+  solution: Grid,
+): number | null {
+  const adj = buildAdjacency(constraints);
+
+  // Advance board as far as deduction allows to find genuinely ambiguous cells
+  const board = givens.slice() as Grid;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let idx = 0; idx < COUNT; idx++) {
+      if (board[idx] !== 0) continue;
+      const canSun = canPlace(board, adj, idx, 1);
+      const canMoon = canPlace(board, adj, idx, 2);
+      if (canSun && !canMoon) { board[idx] = 1; changed = true; }
+      else if (!canSun && canMoon) { board[idx] = 2; changed = true; }
+    }
+  }
+
+  // First pass: prefer cells that don't complete both sides of any relation pair
+  for (let idx = 0; idx < COUNT; idx++) {
+    if (board[idx] !== 0) continue;
+    const v = solution[idx] as Cell;
+    if (!canPlace(board, adj, idx, v)) continue;
+    const fillsRelation = constraints.some(
+      ({ a, b }) => (idx === a && givens[b] !== 0) || (idx === b && givens[a] !== 0),
+    );
+    if (fillsRelation) continue;
+    return idx;
+  }
+
+  // Fallback: any valid ambiguous cell
+  for (let idx = 0; idx < COUNT; idx++) {
+    if (board[idx] !== 0) continue;
+    const v = solution[idx] as Cell;
+    if (canPlace(board, adj, idx, v)) return idx;
+  }
+
+  return null;
 }
 
 export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
@@ -306,16 +318,19 @@ export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
     if (bestClueCount <= targetBudget) break;
   }
 
-  // Ensure the minimized puzzle is fully solvable by constraint propagation alone.
   let { givens, constraints, solution } = { givens: bestGivens!, constraints: bestConstraints, solution: bestSolution! };
+
+  if (mode === 'minimal') {
+    // Return the raw minimizer output — unique solution guaranteed, no extra hints.
+    return { givens, constraints, solution };
+  }
+
+  // Hard mode: add BFS-chosen hints until fully solvable by constraint propagation.
   while (!isSolvableByDeduction(givens, constraints)) {
-    const empty: number[] = [];
-    for (let i = 0; i < givens.length; i++) {
-      if (givens[i] === 0) empty.push(i);
-    }
-    const pick = empty[Math.floor(Math.random() * empty.length)];
+    const hint = findDeductionHint(givens, constraints, solution);
+    if (hint === null) break;
     givens = givens.slice() as Grid;
-    givens[pick] = solution[pick];
+    givens[hint] = solution[hint];
   }
 
   // Drop one given from any relation pair where both are filled —
@@ -325,12 +340,5 @@ export function generatePuzzle(mode: 'hard' | 'minimal'): Puzzle {
     if (givens[a] !== 0 && givens[b] !== 0) givens[b] = 0;
   }
 
-  const minimal: Puzzle = { givens, constraints, solution };
-
-  // Hard mode: same relations, just 3 extra symbol cells revealed.
-  if (mode === 'hard') {
-    return addExtraGivens(minimal, 3);
-  }
-
-  return minimal;
+  return { givens, constraints, solution };
 }
