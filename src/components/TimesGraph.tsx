@@ -1,64 +1,71 @@
 import { useState } from 'react';
-import { LayoutChangeEvent, View } from 'react-native';
-import { Circle, Line, Polyline, Svg, Text as SvgText } from 'react-native-svg';
+import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { Circle, Line, Path, Polyline, Svg } from 'react-native-svg';
 import { colors, formatTime } from '../theme';
 
 interface Props {
-  times: number[]; // seconds, newest-first (API order)
+  times: number[]; // seconds, newest-first
+  height?: number;
+  accent?: string;
 }
 
-export function TimesGraph({ times }: Props) {
+const FONT = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+export function TimesGraph({ times, height = 160, accent = colors.accent }: Props) {
   const [w, setW] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);
 
-  // display oldest → newest left → right
   const pts = [...times].reverse();
 
-  if (w === 0) return <View style={{ height: 140 }} onLayout={onLayout} />;
+  if (w === 0) return <View style={{ height }} onLayout={onLayout} />;
   if (pts.length === 0) return null;
 
-  const H = 140;
-  const PAD = { top: 12, right: 12, bottom: 28, left: 48 };
+  const PAD = { top: 12, right: 12, bottom: 24, left: 50 };
   const plotW = w - PAD.left - PAD.right;
-  const plotH = H - PAD.top - PAD.bottom;
+  const plotH = height - PAD.top - PAD.bottom;
 
-  const maxT = Math.max(...pts);
-  const minT = Math.min(...pts);
+  const rawMin = Math.min(...pts);
+  const rawMax = Math.max(...pts);
+  const padding = Math.max(15, Math.round((rawMax - rawMin) * 0.15));
+  const minT = Math.max(0, rawMin - padding);
+  const maxT = rawMax + padding;
   const range = Math.max(maxT - minT, 30);
 
   const px = (i: number) =>
     PAD.left + (pts.length > 1 ? (i / (pts.length - 1)) * plotW : plotW / 2);
-  const py = (t: number) =>
-    PAD.top + plotH - ((t - minT) / range) * plotH;
+  const py = (t: number) => PAD.top + plotH - ((t - minT) / range) * plotH;
 
-  const ticks = [minT, minT + range / 2, maxT];
+  const tickCount = 3;
+  const ticks = Array.from({ length: tickCount }, (_, i) => minT + (range * i) / (tickCount - 1));
   const polyPts = pts.map((t, i) => `${px(i)},${py(t)}`).join(' ');
 
+  const bottomY = PAD.top + plotH;
+  const fillD = pts.length > 1
+    ? `M ${px(0)},${bottomY} L ${pts.map((t, i) => `${px(i)},${py(t)}`).join(' L ')} L ${px(pts.length - 1)},${bottomY} Z`
+    : null;
+
   return (
-    <View onLayout={onLayout}>
-      <Svg width={w} height={H}>
+    <View style={{ height, position: 'relative' }} onLayout={onLayout}>
+      <Svg width={w} height={height}>
         {ticks.map((t, i) => (
           <Line
-            key={i}
-            x1={PAD.left} y1={py(t)}
-            x2={PAD.left + plotW} y2={py(t)}
-            stroke="#e8ecf3" strokeWidth={1}
+            key={`grid-${i}`}
+            x1={PAD.left}
+            y1={py(t)}
+            x2={PAD.left + plotW}
+            y2={py(t)}
+            stroke="#edf0f6"
+            strokeWidth={1}
           />
         ))}
-        {ticks.map((t, i) => (
-          <SvgText
-            key={i}
-            x={PAD.left - 6} y={py(t) + 4}
-            textAnchor="end" fontSize={10} fill={colors.subtle}
-          >
-            {formatTime(Math.round(t))}
-          </SvgText>
-        ))}
+        {fillD && (
+          <Path d={fillD} fill={accent} fillOpacity={0.08} stroke="none" />
+        )}
         {pts.length > 1 && (
           <Polyline
             points={polyPts}
             fill="none"
-            stroke={colors.accent}
+            stroke={accent}
             strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -69,15 +76,38 @@ export function TimesGraph({ times }: Props) {
           return (
             <Circle
               key={i}
-              cx={px(i)} cy={py(t)}
-              r={isMostRecent ? 5 : 3}
-              fill={isMostRecent ? colors.accent : '#fff'}
-              stroke={colors.accent}
+              cx={px(i)}
+              cy={py(t)}
+              r={isMostRecent ? 4.5 : pts.length > 20 ? 2 : 3}
+              fill={isMostRecent ? accent : '#fff'}
+              stroke={accent}
               strokeWidth={isMostRecent ? 0 : 1.5}
             />
           );
         })}
       </Svg>
+      {ticks.map((t, i) => (
+        <Text
+          key={`label-${i}`}
+          style={[
+            styles.yLabel,
+            { top: py(t) - 7, left: 0, width: PAD.left - 6 },
+          ]}
+        >
+          {formatTime(Math.round(t))}
+        </Text>
+      ))}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  yLabel: {
+    position: 'absolute',
+    fontSize: 9,
+    color: colors.subtle,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+    fontFamily: FONT,
+  },
+});

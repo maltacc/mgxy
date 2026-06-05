@@ -1,71 +1,73 @@
-import { COUNT, Grid, MOON, PER_LINE, Puzzle, SUN, SIZE } from './types';
+import { Grid, MOON, PER_LINE, Puzzle, SUN, SIZE, indexOf } from './types';
 
-// return set of cell indices that violate constraints 
-export function getViolations(board: Grid, puzzle: Puzzle): Set<number> {
+function hasThreeConsecutive(board: Grid): Set<number> {
     const violations = new Set<number>();
 
-    // 3 in a line
-    for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
-            const idx = r * SIZE + c;
-            if (c <= SIZE - 3) {
-                const a = board[idx];
-                if (a !== 0 && a === board[idx + 1] && a === board[idx + 2]) {
-                    violations.add(idx);
-                    violations.add(idx + 1);
-                    violations.add(idx + 2);
-                }
-            }
-            if (r <= SIZE - 3) {
-                const a = board[idx];
-                if (a !== 0 && a === board[idx + SIZE] && a === board[idx + 2 * SIZE]) {
-                    violations.add(idx);
-                    violations.add(idx + SIZE);
-                    violations.add(idx + 2 * SIZE);
+    const checkLine = (getIdx: (line: number, pos: number) => number) => {
+        for (let i = 0; i < SIZE; i++) {
+            for (let j = 0; j <= SIZE - 3; j++) {
+                const a = getIdx(i, j), b = getIdx(i, j + 1), c = getIdx(i, j + 2);
+                if (board[a] !== 0 && board[a] === board[b] && board[b] === board[c]) {
+                    violations.add(a); violations.add(b); violations.add(c);
                 }
             }
         }
-    }
+    };
 
-    // too many of a symbol in a row/col 
-    const flag = (indices: number[]) => {
-        let suns = 0; 
-        let moons = 0; 
-
-        for (const i of indices) {
-            if (board[i] === SUN) suns++;
-            else if (board[i] === MOON) moons++;
-        }
-        if (suns > PER_LINE || moons > PER_LINE) {
-            const over = suns > PER_LINE ? SUN : MOON;
-            for (const i of indices) {
-                if (board[i] === over) {
-                    violations.add(i);
-                }
-            }
-        }
-    }
-    for (let r = 0; r < SIZE; r++) {
-        flag(Array.from({ length: SIZE }, (_, i) => r * SIZE + i));
-    }
-    for (let c = 0; c < SIZE; c++) {
-        flag(Array.from({ length: SIZE }, (_, i) => i * SIZE + c));
-    }
-
-    // broken constraint signs
-    for (const edge of puzzle.constraints) {
-        const x = board[edge.a];
-        const y = board[edge.b];
-        if (x !== 0 && y !== 0) {
-            if ((edge.relation === '=' && x !== y) || (edge.relation === 'x' && x === y)) {
-                violations.add(edge.a).add(edge.b);
-            }
-        }
-    }
+    checkLine((i, j) => indexOf(i, j));  // rows
+    checkLine((i, j) => indexOf(j, i));  // columns
     return violations;
 }
 
-// board solved when it's completely filled with no violations
+function hasValidDistribution(board: Grid): Set<number> {
+    const violations = new Set<number>();
+
+    const checkLine = (getIdx: (line: number, pos: number) => number) => {
+        for (let i = 0; i < SIZE; i++) {
+            let suns = 0, moons = 0;
+            for (let j = 0; j < SIZE; j++) {
+                const v = board[getIdx(i, j)];
+                if (v === SUN) suns++;
+                else if (v === MOON) moons++;
+            }
+            if (suns > PER_LINE || moons > PER_LINE) {
+                const over = suns > PER_LINE ? SUN : MOON;
+                for (let j = 0; j < SIZE; j++) {
+                    const idx = getIdx(i, j);
+                    if (board[idx] === over) violations.add(idx);
+                }
+            }
+        }
+    };
+
+    checkLine((i, j) => indexOf(i, j));  // rows
+    checkLine((i, j) => indexOf(j, i));  // columns
+    return violations;
+}
+
+function satisfiesConstraints(board: Grid, puzzle: Puzzle): Set<number> {
+    const violations = new Set<number>();
+
+    for (const edge of puzzle.constraints) {
+        const x = board[edge.a], y = board[edge.b];
+        if (x !== 0 && y !== 0) {
+            if ((edge.relation === '=' && x !== y) || (edge.relation === 'x' && x === y)) {
+                violations.add(edge.a); violations.add(edge.b);
+            }
+        }
+    }
+
+    return violations;
+}
+
+export function getViolations(board: Grid, puzzle: Puzzle): Set<number> {
+    const violations = new Set<number>();
+    for (const v of hasThreeConsecutive(board)) violations.add(v);
+    for (const v of hasValidDistribution(board)) violations.add(v);
+    for (const v of satisfiesConstraints(board, puzzle)) violations.add(v);
+    return violations;
+}
+
 export function isSolved(board: Grid, puzzle: Puzzle): boolean {
     return board.every(cell => cell !== 0) && getViolations(board, puzzle).size === 0;
 }

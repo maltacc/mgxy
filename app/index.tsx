@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,11 +9,13 @@ import {
   View,
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { fetchTimes, postSolveTime } from '../src/lib/supabase';
+import { fetchLeaderboard, fetchTimes, postSolveTime } from '../src/lib/supabase';
+import type { LeaderboardPlayer } from '../src/lib/supabase';
 import { Board } from '../src/components/Board';
 import { Controls } from '../src/components/Controls';
 import { GoogleAuthButton } from '../src/components/GoogleAuthButton';
-import { SolvedPanel } from '../src/components/SolvedPanel';
+import { PlayerCard } from '../src/components/PlayerCard';
+import { StatsRow } from '../src/components/StatsRow';
 import { TimesGraph } from '../src/components/TimesGraph';
 import { useAuth } from '../src/context/AuthContext';
 import { useGame } from '../src/hooks/useGame';
@@ -68,16 +70,23 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
 function HistoryContent({ refreshKey }: { refreshKey: number }) {
   const { user } = useAuth();
   const [times, setTimes] = useState<number[]>([]);
+  const [others, setOthers] = useState<LeaderboardPlayer[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    fetchTimes(user.sub)
-      .then(setTimes)
+    Promise.all([
+      fetchTimes(user.sub),
+      fetchLeaderboard(user.sub),
+    ])
+      .then(([mine, players]) => {
+        setTimes(mine);
+        setOthers(players);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [user, refreshKey]); // refreshKey changes every time the tab is opened
+  }, [user, refreshKey]);
 
   if (!user) {
     return (
@@ -109,31 +118,32 @@ function HistoryContent({ refreshKey }: { refreshKey: number }) {
   const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
 
   return (
-    <ScrollView contentContainerStyle={histStyles.scroll} showsVerticalScrollIndicator={false}>
-      <Text style={histStyles.heading}>History</Text>
+    <ScrollView style={histStyles.scrollView} contentContainerStyle={histStyles.scroll} showsVerticalScrollIndicator={false}>
+      <Text style={histStyles.heading}>Your history</Text>
 
-      <View style={histStyles.statsRow}>
-        <View style={histStyles.stat}>
-          <Text style={histStyles.statLabel}>Best</Text>
-          <Text style={histStyles.statValue}>{formatTime(best)}</Text>
-        </View>
-        <View style={histStyles.divider} />
-        <View style={histStyles.stat}>
-          <Text style={histStyles.statLabel}>Avg</Text>
-          <Text style={histStyles.statValue}>{formatTime(avg)}</Text>
-        </View>
-        <View style={histStyles.divider} />
-        <View style={histStyles.stat}>
-          <Text style={histStyles.statLabel}>Solves</Text>
-          <Text style={histStyles.statValue}>{times.length}</Text>
-        </View>
-      </View>
+      <StatsRow best={best} avg={avg} solves={times.length} />
 
       <View style={histStyles.graphCard}>
         <TimesGraph times={times} />
         <Text style={histStyles.graphCaption}>
           Last {times.length} solve{times.length === 1 ? '' : 's'}
         </Text>
+      </View>
+
+      <View style={histStyles.othersSection}>
+        <Text style={histStyles.sectionHeading}>Other players</Text>
+        {others.length === 0 ? (
+          <Text style={histStyles.emptySub}>No other players yet</Text>
+        ) : (
+          <>
+            <Text style={histStyles.sectionSub}>Average times over their last {30} solves</Text>
+            <View style={histStyles.playerList}>
+              {others.map((player, i) => (
+                <PlayerCard key={player.userId} player={player} colorIndex={i} />
+              ))}
+            </View>
+          </>
+        )}
       </View>
     </ScrollView>
   );
@@ -144,36 +154,26 @@ export default function GameScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('game');
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
-  const [times, setTimes] = useState<number[]>([]);
-  const [showPanel, setShowPanel] = useState(false);
-  const panelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [historyMounted, setHistoryMounted] = useState(false);
 
   useEffect(() => {
-    if (!game.solved) {
-      setShowPanel(false);
-      return;
-    }
-    if (user) {
-      postSolveTime(user.sub, game.seconds)
-        .then(setTimes)
-        .catch((err) => { console.error('postSolveTime error:', err); });
-    }
-    panelTimerRef.current = setTimeout(() => setShowPanel(true), 900);
-    return () => { if (panelTimerRef.current) clearTimeout(panelTimerRef.current); };
+    if (!game.solved || !user) return;
+    postSolveTime(user.sub, game.seconds, user.name)
+      .then(() => setHistoryRefreshKey(k => k + 1))
+      .catch(() => {});
   }, [game.solved, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTabChange = (tab: Tab) => {
-    if (tab === 'history') setHistoryRefreshKey(k => k + 1);
+    if (tab === 'history') setHistoryMounted(true);
     setActiveTab(tab);
   };
 
   const handleNewGame = () => {
-    setShowPanel(false);
-    setTimes([]);
     game.newGame();
   };
 
   return (
+    <View style={styles.root}>
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.logo}>∞Tango</Text>
@@ -182,29 +182,19 @@ export default function GameScreen() {
 
       {activeTab === 'game' && (
         <>
-          {!showPanel && (
-            <View style={styles.timerRow}>
-              <Text selectable={false} style={styles.timer}>{formatTime(game.seconds)}</Text>
+          <View style={styles.timerRow}>
+            <Text selectable={false} style={styles.timer}>{formatTime(game.seconds)}</Text>
+            {game.solved ? (
+              <Text style={styles.solvedBadge}>Solved</Text>
+            ) : (
               <View style={styles.badge}>
                 <Text selectable={false} style={styles.badgeLabel}>Very Hard</Text>
               </View>
-            </View>
-          )}
+            )}
+          </View>
 
           <View style={styles.boardWrap}>
-            {showPanel ? (
-              <ScrollView
-                contentContainerStyle={styles.panelScroll}
-                showsVerticalScrollIndicator={false}
-              >
-                <SolvedPanel
-                  solveTime={game.seconds}
-                  times={times}
-                  isLoggedIn={!!user}
-                  onNewGame={handleNewGame}
-                />
-              </ScrollView>
-            ) : game.paused ? (
+            {game.paused && !game.solved ? (
               <View style={styles.pauseOverlay}>
                 <Text style={styles.pauseTitle}>Paused</Text>
                 <Text style={styles.pauseHint}>Press ▶ to resume</Text>
@@ -221,34 +211,34 @@ export default function GameScreen() {
             )}
           </View>
 
-          {!showPanel && (
-            <View style={styles.controls}>
-              <Controls
-                canUndo={game.canUndo}
-                paused={game.paused}
-                onUndo={game.undo}
-                onClear={game.clear}
-                onPause={game.togglePause}
-                onNew={handleNewGame}
-              />
-            </View>
-          )}
+          <View style={styles.controls}>
+            <Controls
+              canUndo={game.canUndo}
+              paused={game.paused}
+              onUndo={game.undo}
+              onClear={game.clear}
+              onPause={game.togglePause}
+              onNew={handleNewGame}
+            />
+          </View>
         </>
       )}
 
-      {activeTab === 'history' && (
-        <View style={styles.boardWrap}>
+      {historyMounted && (
+        <View style={[styles.histContainer, activeTab !== 'history' && styles.hidden]}>
           <HistoryContent refreshKey={historyRefreshKey} />
         </View>
       )}
 
       <TabBar active={activeTab} onChange={handleTabChange} />
     </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.bg, alignItems: 'center' },
+  safe: { flex: 1, width: '100%', maxWidth: 500, backgroundColor: colors.bg },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -258,7 +248,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   logo: { fontSize: 22, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
-  timerRow: { alignItems: 'center', paddingVertical: 12, gap: 6 },
+  timerRow: { alignItems: 'center', paddingTop: 12, paddingBottom: 20, gap: 6 },
   timer: {
     fontSize: 32,
     fontWeight: '600',
@@ -275,8 +265,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   badgeLabel: { fontSize: 13, color: colors.subtle, fontWeight: '500' },
+  solvedBadge: {
+    fontSize: 13,
+    color: colors.success,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   boardWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
-  panelScroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 16, width: '100%' },
+  histContainer: { flex: 1, paddingHorizontal: 16 },
+  hidden: { display: 'none' },
   pauseOverlay: { alignItems: 'center', gap: 10 },
   pauseTitle: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: 1 },
   pauseHint: { fontSize: 14, color: colors.subtle },
@@ -303,6 +301,7 @@ const tabStyles = StyleSheet.create({
 });
 
 const histStyles = StyleSheet.create({
+  scrollView: { flex: 1 },
   scroll: { flexGrow: 1, paddingVertical: 8, width: '100%' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
@@ -314,17 +313,6 @@ const histStyles = StyleSheet.create({
     marginBottom: 16,
     marginTop: 4,
   },
-  statsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  stat: { flex: 1, alignItems: 'center', gap: 3 },
-  statLabel: {
-    fontSize: 11,
-    color: colors.subtle,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  statValue: { fontSize: 20, fontWeight: '700', color: colors.text },
-  divider: { width: 1, height: 32, backgroundColor: '#e8ecf3' },
   graphCard: {
     backgroundColor: colors.surface,
     borderRadius: 14,
@@ -332,6 +320,11 @@ const histStyles = StyleSheet.create({
     borderColor: '#dde2eb',
     padding: 16,
     gap: 6,
+    marginBottom: 24,
   },
   graphCaption: { fontSize: 11, color: colors.subtle, textAlign: 'right' },
+  othersSection: { gap: 12, paddingBottom: 16 },
+  sectionHeading: { fontSize: 18, fontWeight: '700', color: colors.text },
+  sectionSub: { fontSize: 13, color: colors.subtle, marginBottom: 4 },
+  playerList: { gap: 12 },
 });

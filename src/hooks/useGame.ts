@@ -23,7 +23,7 @@ export interface GameState {
 }
 
 const STORAGE_KEY = 'tango_game';
-const STORAGE_VERSION = 3; // bump when generator logic changes to discard stale saves
+const STORAGE_VERSION = 5; // bump when generator logic changes to discard stale saves
 
 function loadSaved(): { puzzle: Puzzle; board: Grid; seconds: number } | null {
     if (typeof localStorage === 'undefined') return null;
@@ -33,7 +33,11 @@ function loadSaved(): { puzzle: Puzzle; board: Grid; seconds: number } | null {
         const parsed = JSON.parse(raw);
         if (parsed.v !== STORAGE_VERSION) return null;
         const { puzzle, board, seconds } = parsed;
-        if (puzzle && board && typeof seconds === 'number') return { puzzle, board, seconds };
+        if (puzzle && board && typeof seconds === 'number') {
+          // Don't restore a solved game — would re-trigger the save effect on reload
+          if (isSolved(board as Grid, puzzle as Puzzle)) return null;
+          return { puzzle, board, seconds };
+        }
     } catch {}
     return null;
 }
