@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Tango Unlimited",
+    "slug": "tango-unlimited",
+    "version": "1.0.0",
+    "scheme": "tango",
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
