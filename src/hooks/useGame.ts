@@ -119,19 +119,21 @@ export function useGame(): GameState {
 
     const lastCycleRef = useRef<{ idx: number; time: number } | null>(null);
     const cycleCell = useCallback((idx: number) => {
-        if (puzzle === null || puzzle.givens[idx] !== 0 || solved) return;
+        if (puzzle === null || puzzle.givens[idx] !== 0 || paused) return;
         setHintCell(null);
         const now = Date.now();
         const prev = lastCycleRef.current;
         const sameCell = prev !== null && prev.idx === idx && now - prev.time < 800;
         lastCycleRef.current = { idx, time: now };
-        if (!sameCell) setHistory(h => [...h, board]);
         setPerDiff(p => {
-            const next = p[difficulty].board.slice() as Grid;
+            const currentBoard = p[difficulty].board;
+            if (isSolved(currentBoard, puzzle)) return p;
+            if (!sameCell) setHistory(h => [...h, currentBoard]);
+            const next = currentBoard.slice() as Grid;
             next[idx] = nextValue(next[idx]);
             return { ...p, [difficulty]: { ...p[difficulty], board: next } };
         });
-    }, [board, difficulty, puzzle, solved]);
+    }, [difficulty, puzzle, paused]);
 
     const undo = useCallback(() => {
         setHistory(h => {
