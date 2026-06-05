@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   logo: { fontSize: 22, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
-  timerRow: { alignItems: 'center', paddingTop: 12, paddingBottom: 20, gap: 6 },
+  timerRow: { alignItems: 'center', paddingTop: 8, paddingBottom: 8, gap: 4 },
   timer: {
     fontSize: 32,
     fontWeight: '600',
@@ -272,13 +272,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  boardWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  boardWrap: { flex: 1, paddingHorizontal: 16 },
   histContainer: { flex: 1, paddingHorizontal: 16 },
   hidden: { display: 'none' },
   pauseOverlay: { alignItems: 'center', gap: 10 },
   pauseTitle: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: 1 },
   pauseHint: { fontSize: 14, color: colors.subtle },
-  controls: { paddingVertical: 24, paddingHorizontal: 20 },
+  controls: { paddingVertical: 12, paddingHorizontal: 20 },
 });
 
 const tabStyles = StyleSheet.create({

@@ -1,4 +1,5 @@
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useState } from "react";
 import { Grid, Puzzle, SIZE } from "../game/types";
 import { Cell } from "./Cell";
 import { colors } from "../theme";
@@ -13,14 +14,30 @@ interface Props {
 }
 
 const GAP = 2;
+const FRAME_PAD = 10; // Board frame padding (each side)
 
 export function Board({ board, puzzle, violations, hintCell, solved, onCell }: Props) {
-    const { width } = useWindowDimensions();
-    const boardMax = Math.max(120, Math.min(width - 32, 460));
+    const { width: winWidth } = useWindowDimensions();
+    const [containerW, setContainerW] = useState(winWidth);
+    const [containerH, setContainerH] = useState(9999);
+
+    // Fit within both the measured container width and height (minus frame padding)
+    const boardMax = Math.max(120, Math.min(
+        containerW - FRAME_PAD * 2,
+        containerH - FRAME_PAD * 2,
+        460,
+    ));
     const cell = Math.max(16, Math.floor((boardMax - GAP * (SIZE + 1)) / SIZE));
     const total = cell * SIZE + GAP * (SIZE + 1);
 
     return (
+        <View
+            style={styles.wrapper}
+            onLayout={e => {
+                setContainerW(e.nativeEvent.layout.width);
+                setContainerH(e.nativeEvent.layout.height);
+            }}
+        >
         <View style={styles.frame}>
             <View style={[styles.grid, { width: total, height: total }]}>
                 {Array.from({ length: SIZE * SIZE }, (_, idx) => {
@@ -78,10 +95,17 @@ export function Board({ board, puzzle, violations, hintCell, solved, onCell }: P
                 })}
             </View>
         </View>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
+    wrapper: {
+        flex: 1,
+        alignSelf: 'stretch',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     frame: {
         padding: 10,
         borderRadius: 18,
