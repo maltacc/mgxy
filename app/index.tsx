@@ -18,7 +18,7 @@ import type { LeaderboardPlayer } from "../src/lib/supabase";
 import { Board } from "../src/components/Board";
 import { Controls } from "../src/components/Controls";
 import { GoogleAuthButton } from "../src/components/GoogleAuthButton";
-import { PlayerCard } from "../src/components/PlayerCard";
+import { PlayerAccordion } from "../src/components/PlayerAccordion";
 import { StatsRow } from "../src/components/StatsRow";
 import { TimesGraph } from "../src/components/TimesGraph";
 import { useAuth } from "../src/context/AuthContext";
@@ -179,7 +179,7 @@ function HistoryContent({ refreshKey }: { refreshKey: number }) {
             </Text>
             <View style={histStyles.playerList}>
               {others.map((player, i) => (
-                <PlayerCard
+                <PlayerAccordion
                   key={player.userId}
                   player={player}
                   colorIndex={i}
@@ -240,7 +240,7 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (!game.solved || !user) return;
-    postSolveTime(user.sub, game.seconds, game.difficulty)
+    postSolveTime(user.sub, game.seconds, game.difficulty, user.name, user.picture)
       .then(() => setHistoryRefreshKey((k) => k + 1))
       .catch(() => {});
   }, [game.solved, user, game.difficulty]); // eslint-disable-line react-hooks/exhaustive-deps

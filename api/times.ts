@@ -43,8 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    const { userId, time, name, difficulty } = req.body as {
-      userId: string; time: number; name?: string; difficulty?: string;
+    const { userId, time, name, picture, difficulty } = req.body as {
+      userId: string; time: number; name?: string; picture?: string; difficulty?: string;
     };
     if (!userId || typeof time !== 'number' || time <= 0) {
       res.status(400).json({ error: 'invalid payload' });
@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { error: profileError } = await supabase
       .from('user_profiles')
-      .upsert({ user_id: userId, name: name || `Player ${userId.slice(0, 6)}` }, { onConflict: 'user_id' });
+      .upsert({ user_id: userId, name: name || `Player ${userId.slice(0, 6)}`, ...(picture ? { picture } : {}) }, { onConflict: 'user_id' });
 
     if (profileError) {
       console.error('user_profiles upsert error:', profileError);

@@ -3,6 +3,7 @@ import type { Difficulty } from "../hooks/useGame";
 export interface LeaderboardPlayer {
   userId: string;
   name: string;
+  picture?: string;
   times: number[];
   avg: number;
   best: number;
@@ -26,11 +27,12 @@ export async function postSolveTime(
   seconds: number,
   difficulty: Difficulty,
   name?: string,
+  picture?: string,
 ): Promise<number[]> {
   const res = await fetch("/api/times", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId, time: seconds, difficulty, name }),
+    body: JSON.stringify({ userId, time: seconds, difficulty, name, picture }),
   });
   if (!res.ok) throw new Error("Failed to save time");
   const { times } = await res.json();

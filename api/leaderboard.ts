@@ -12,6 +12,7 @@ const MAX = 30;
 export interface LeaderboardPlayer {
   userId: string;
   name: string;
+  picture?: string;
   times: number[];
   avg: number;
   best: number;
@@ -37,8 +38,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { data: profiles } = await supabase.from('user_profiles').select('user_id, name');
-  const names = new Map((profiles ?? []).map(p => [p.user_id, p.name as string]));
+  const { data: profiles } = await supabase.from('user_profiles').select('user_id, name, picture');
+  const profileMap = new Map((profiles ?? []).map(p => [p.user_id as string, { name: p.name as string, picture: p.picture as string | null }]));
   const byUser = new Map<string, number[]>();
 
   for (const row of rows ?? []) {
@@ -52,9 +53,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const players: LeaderboardPlayer[] = [...byUser.entries()]
     .map(([userId, times]) => {
       const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+      const profile = profileMap.get(userId);
       return {
         userId,
-        name: names.get(userId) ?? `Player ${userId.slice(0, 6)}`,
+        name: profile?.name ?? `Player ${userId.slice(0, 6)}`,
+        picture: profile?.picture ?? undefined,
         times,
         avg,
         best: Math.min(...times),
